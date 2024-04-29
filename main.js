@@ -1,28 +1,28 @@
 (function() {
   'use strict';
   const DEBUG_MODE = false;
+
+  // TODO: Update to fetch from table header
+  const SEARCH_PHOTO_COL = 6;
+  const BOARDING_PHOTO_COL = 9;
+
   const outerContainer = document.querySelector('body > nav')?.nextElementSibling;
   const mainContentDiv = outerContainer.querySelector('.sub-page');
-  console.log('mainContent: ', mainContentDiv);
   const runOnPetSearch = () => {
     const observer = new MutationObserver((mutationList, _observer) => {
       for (const mutation of mutationList) {
         if (mutation.type === "childList" && mutation.addedNodes.length) {
           (async () => {
-            console.log('changed, checking');
-            for (const itNode of Array.from(mutation.addedNodes)) {
+            for (const itNode of Array.from(mutation.addedNodes) ?? []) {
               if (itNode.nodeName === 'H1') {
-                const found = await checkAndRun(itNode);
-                if (found) {
-                  console.log('Found and done updating');
+                const found = await checkPetSearchRun(itNode);
+                const boarding = await checkBoardingSearchRun(itNode);
+                if (found || boarding) {
                   return;
                 }
               }
             }
-            console.log('no Header found so abandoning');
           })();
-        //} else if (mutation.type === "attributes") {
-        //  console.log(`The ${mutation.attributeName} attribute was modified.`);
         }
       }
     });
@@ -31,23 +31,64 @@
     observer.observe(mainContentDiv, { attributes: false, childList: true, subtree: false });
   };
 
-  const restyleButtons = () => {
-    const eTable = document.querySelector('#top_search_table');
-    const eTBody = eTable.querySelector('tbody');
+  const restyleButtons = eTable => {
+    const eTBody = eTable?.querySelector('tbody');
 
-    Array.from(document.querySelectorAll('.lumo-signin')).forEach(qbtn => {
+    Array.from(document.querySelectorAll('.lumo-signin') ?? []).forEach(qbtn => {
       const rowId = qbtn.getAttribute('data-orig-order');
       const belongingRow = eTBody.querySelector(`[data-orig-order="${rowId}"`);
-      console.log(belongingRow.offsetTop, belongingRow, qbtn);
       qbtn.style.top = `${belongingRow.offsetTop+4}px`;
       qbtn.style.height = `${belongingRow.clientHeight-12}px`;
     });
   };
 
-  const checkAndRun = (indicatingElement) => new Promise((resolve, _reject) => {
-    const correctPage = indicatingElement?.innerText.includes('Pet Search');
-    if (!correctPage) {
-      console.log('Not Pet Search page. Exiting');
+  const updateTablePics = (targetTable, columnNum) => {
+    const eRows = Array.from(targetTable.querySelectorAll('tbody > tr') ?? []);
+    eRows.forEach(eRowIt => {
+      const photoElement = eRowIt.querySelector(`td:nth-of-type(${columnNum}) a`);
+      if (!photoElement) return;
+      const photoElementParent = photoElement.parentNode;
+      const photoData = photoElement.dataset.content;
+      if (!photoData?.length) return;
+      photoElement.outerHTML = photoElement.dataset.content;
+      const imgElement = photoElementParent.querySelector('img');
+      imgElement.addEventListener('load', () => {
+        restyleButtons(targetTable);
+      });
+    });
+  };
+
+  const checkBoardingSearchRun = (indicatingElement) => new Promise((resolve, _reject) => {
+    const isBoardingSearch = indicatingElement?.innerText.includes('Schedule Boarding');
+    if (!isBoardingSearch) {
+      resolve(false);
+      return;
+    }
+
+    const observer = new MutationObserver((mutationList, _observer) => {
+      (() => {
+        for (const mutation of mutationList) {
+          if (mutation.type === "childList" && mutation.addedNodes.length) {
+            for (const itNode of Array.from(mutation.addedNodes ?? [])) {
+              const isSearchPortion = Array.from(itNode?.parentElement?.querySelectorAll?.('h2') ?? [])
+                ?.filter(it => it.innerText === 'Search Results')?.length;
+              if (isSearchPortion) {
+                const mainTable = itNode.parentNode.querySelector('.table-responsive table.table.sortable');
+                updateTablePics(mainTable, BOARDING_PHOTO_COL);
+                return;
+              }
+            }
+          }
+        }
+      })();
+    });
+
+    observer.observe(mainContentDiv, { attributes: false, childList: true, subtree: true });
+  });
+
+  const checkPetSearchRun = (indicatingElement) => new Promise((resolve, _reject) => {
+    const isPetSearch = indicatingElement?.innerText.includes('Pet Search');
+    if (!isPetSearch) {
       resolve(false);
       return;
     }
@@ -55,13 +96,15 @@
     resolve(true);
 
     const eTable = document.querySelector('#top_search_table');
-    const eTBody = eTable.querySelector('tbody');
+    const eTBody = eTable?.querySelector('tbody');
 
     if (!eTBody) return;
 
     const eTableWrapper = document.querySelector('#top_search_table_wrapper');
-    const eSortingClicks = Array.from(eTable.querySelectorAll('thead .sorting'));
+    const eSortingClicks = Array.from(eTable.querySelectorAll('thead .sorting') ?? []);
     const ePlayArea = eSortingClicks[eSortingClicks.length - 1];
+
+    updateTablePics(eTable, SEARCH_PHOTO_COL);
 
     ePlayArea.innerText = 'Quick Signin';
     if (!eTable || !eTableWrapper || !eTBody) {
@@ -69,7 +112,7 @@
       return;
     }
 
-    Array.from(eTBody.children).forEach((it, index) => {
+    Array.from(eTBody.children ?? []).forEach((it, index) => {
       it.setAttribute('data-orig-order', String(index));
       const eText = it.querySelector('a span:nth-of-type(2)');
       if (DEBUG_MODE) {
@@ -79,32 +122,33 @@
     eSortingClicks.forEach(it => {
       it.addEventListener('click', () => {
         setTimeout(() => {
-          restyleButtons();
+          restyleButtons(eTable);
         }, 100);
       });
     });
 
     const eRows = [
-      ...Array.from(eTable.querySelectorAll('tr[role="row"].odd')).filter(it => it.querySelector('td')?.innerHTML?.length > 0),
-      ...Array.from(eTable.querySelectorAll('tr[role="row"].even')).filter(it => it.querySelector('td')?.innerHTML?.length > 0),
+      ...(
+        Array.from(eTable.querySelectorAll('tr[role="row"].odd') ?? [])
+          ?.filter(it => it.querySelector('td')?.innerHTML?.length > 0) ?? []
+      ),
+      ...(
+        Array.from(eTable.querySelectorAll('tr[role="row"].even') ?? [])
+          ?.filter(it => it.querySelector('td')?.innerHTML?.length > 0) ?? []
+      ),
     ];
 
     eRows.forEach(eRowIt => {
-      const photoElement = eRowIt.querySelector('td:nth-of-type(6) a');
-      if (!photoElement) return;
-      const photoElementParent = photoElement.parentNode;
-      const photoData = photoElement.dataset.content;
-      if (!photoData?.length) return;
-      photoElement.outerHTML = photoElement.dataset.content;
-      const imgElement = photoElementParent.querySelector('img');
-      imgElement.addEventListener('load', () => {
-        restyleButtons();
-      });
-    });
-
-    eRows.forEach(eRowIt => {
-      const signInBtn = Array.from(eRowIt.querySelectorAll('.dropdown-menu a[role="menuitem"]')).filter(it => it.innerText === 'Sign into Daycare')?.[0];
-      const schedBoardingBtn = Array.from(eRowIt.querySelectorAll('.dropdown-menu a[role="menuitem"]')).filter(it => it.innerText === 'Schedule a Boarding')?.[0];
+      const signInBtn = Array.from(
+        eRowIt.querySelectorAll('.dropdown-menu a[role="menuitem"]') ?? []
+      )
+        ?.filter(it => it.innerText === 'Sign into Daycare')
+        ?.[0];
+      const schedBoardingBtn = Array.from(
+        eRowIt.querySelectorAll('.dropdown-menu a[role="menuitem"]') ?? []
+      )
+        ?.filter(it => it.innerText === 'Schedule a Boarding')
+        ?.[0];
 
       const rects = eRowIt.getBoundingClientRect();
 
@@ -179,7 +223,6 @@
   }
 
   if (window.location.href.includes('https://secure.petexec.net/admin/daycareSignin2.php?uid=')) {
-
     const eActionBtn = document.querySelector('#theAction');
 
     const quickLinkUsed = window.localStorage.getItem('quickLinkUsed');
@@ -187,6 +230,10 @@
       window.localStorage.setItem('quickLinkUsed', 'false');
       eActionBtn.click();
     }
+  }
+
+  if (window.location.href.includes('https://secure.petexec.net/admin/boardingSchedule.php')) {
+    checkBoardingSearchRun(mainContentDiv);
   }
 
   runOnPetSearch();
