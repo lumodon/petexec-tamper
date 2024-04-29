@@ -8,5 +8,5 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=petexec.net
 // @grant        none
 // @run-at       document-idle
-// @require      waiting for first push
+// @require      https://raw.githubusercontent.com/lumodon/petexec-tamper/main/main.js
 // ==/UserScript==
